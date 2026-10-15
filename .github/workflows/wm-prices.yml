@@ -108,6 +108,7 @@ jobs:
           git config user.email \
             "41898282+github-actions[bot]@users.noreply.github.com"
 
+          # Save generated files outside repository
           mkdir -p /tmp/wm-prices
           cp stats.json /tmp/wm-prices/
 
@@ -115,6 +116,10 @@ jobs:
             cp wm_prices.json /tmp/wm-prices/
           fi
 
+          # Fix: remove untracked files before checkout
+          rm -f stats.json wm_prices.json
+
+          # Fetch publish branch
           git fetch origin publish || true
 
           if git show-ref --verify --quiet refs/remotes/origin/publish; then
@@ -124,18 +129,21 @@ jobs:
             git rm -rf --ignore-unmatch . || true
           fi
 
+          # Restore generated files
           cp /tmp/wm-prices/stats.json ./stats.json
 
           if [ -f /tmp/wm-prices/wm_prices.json ]; then
             cp /tmp/wm-prices/wm_prices.json ./wm_prices.json
           fi
 
+          # Stage only generated files
           git add stats.json
 
           if [ -f wm_prices.json ]; then
             git add wm_prices.json
           fi
 
+          # Commit only if changed
           if git diff --cached --quiet; then
             echo "No changes to publish"
             exit 0
