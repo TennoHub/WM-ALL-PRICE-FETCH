@@ -100,136 +100,30 @@ jobs:
 
       - name: Download latest relic data
         shell: bash
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python3 - <<'PY'
-          import base64
-          import json
-          import os
-          import time
-          import urllib.error
-          import urllib.request
+          set -euo pipefail
 
-          REPO = "WFCD/warframe-drop-data"
-          BRANCH = "main"
-          FILE_PATH = "data/relics.json"
-          API_BASE = "https://api.github.com"
+          URL="https://raw.githubusercontent.com/WFCD/warframe-drop-data/main/data/relics.json"
 
-          token = os.environ.get("GITHUB_TOKEN", "")
+          if curl -fSL \
+            --retry 3 \
+            --retry-delay 5 \
+            --connect-timeout 15 \
+            --max-time 120 \
+            "$URL" \
+            -o relics.json.tmp; then
 
-          HEADERS = {
-              "User-Agent": "TennoHub-WM-Price-Fetch",
-              "Accept": "application/vnd.github+json",
-              "X-GitHub-Api-Version": "2022-11-28",
-              "Cache-Control": "no-cache",
-              "Pragma": "no-cache",
-          }
-
-          if token:
-              HEADERS["Authorization"] = f"Bearer {token}"
-
-          def api_get(url, retries=3):
-              for attempt in range(1, retries + 1):
-                  try:
-                      request = urllib.request.Request(
-                          url,
-                          headers=HEADERS
-                      )
-
-                      with urllib.request.urlopen(
-                          request,
-                          timeout=60
-                      ) as response:
-                          return json.load(response)
-
-                  except Exception as e:
-                      print(
-                          f"Request failed "
-                          f"(attempt {attempt}/{retries}): {e}"
-                      )
-
-                      if attempt == retries:
-                          raise
-
-                      time.sleep(5 * attempt)
-
-          try:
-              # Step 1: Resolve the latest main branch commit
-              commit_url = (
-                  f"{API_BASE}/repos/{REPO}/commits/{BRANCH}"
-              )
-
-              print("Fetching latest WFCD commit...")
-
-              commit = api_get(commit_url)
-              commit_sha = commit["sha"]
-
-              if len(commit_sha) != 40:
-                  raise RuntimeError(
-                      f"Invalid commit SHA: {commit_sha}"
-                  )
-
-              print(f"Latest commit: {commit_sha}")
-
-              # Step 2: Download relics.json from that exact commit
-              contents_url = (
-                  f"{API_BASE}/repos/{REPO}/contents/"
-                  f"{FILE_PATH}?ref={commit_sha}"
-              )
-
-              print("Downloading relics.json...")
-
-              result = api_get(contents_url)
-
-              if result.get("type") != "file":
-                  raise RuntimeError(
-                      "GitHub API did not return a file"
-                  )
-
-              if result.get("encoding") != "base64":
-                  raise RuntimeError(
-                      "Unexpected GitHub API content encoding"
-                  )
-
-              encoded_content = result.get("content", "")
-
-              if not encoded_content:
-                  raise RuntimeError(
-                      "GitHub API returned empty content"
-                  )
-
-              # Step 3: Decode the downloaded content
-              data = base64.b64decode(
-                  encoded_content,
-                  validate=False
-              )
-
-              # Step 4: Validate JSON
-              parsed = json.loads(data)
-
-              if not isinstance(parsed, (dict, list)):
-                  raise RuntimeError(
-                      "Unexpected relics.json structure"
-                  )
-
-              if not parsed:
-                  raise RuntimeError(
-                      "relics.json is empty"
-                  )
-
-              # Step 5: Publish only validated content
-              with open("relics.json", "wb") as f:
-                  f.write(data)
-
-              print("Successfully downloaded relics.json")
-              print(f"Source commit: {commit_sha}")
-              print(f"File size: {len(data):,} bytes")
-
-          except Exception as e:
-              print(f"::warning::Failed to update relics.json: {e}")
-              print("Previous published relic data will be preserved.")
-          PY
+            if python3 -m json.tool relics.json.tmp > /dev/null; then
+              mv relics.json.tmp relics.json
+              echo "Successfully downloaded relics.json"
+            else
+              echo "::warning::Invalid relics.json received"
+              rm -f relics.json.tmp
+            fi
+          else
+            echo "::warning::Failed to download relics.json"
+            rm -f relics.json.tmp
+          fi
 
       - name: Publish to publish branch
         shell: bash
